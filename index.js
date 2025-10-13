@@ -125,3 +125,4 @@ document.body.appendChild(swElement);
 // general changes
 
 String.prototype.replace = String.prototype.replaceAll; 
+String.prototype.map = function(fn) { return Array.from(this).map(fn); }
