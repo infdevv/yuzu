@@ -1,4 +1,4 @@
-function generateUserAgent() {
+export function generateUserAgent() {
         // Simple randomized User-Agent generator covering common browsers and platforms.
         const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min
 
@@ -43,5 +43,3 @@ function generateUserAgent() {
 
         return browsers[Math.floor(Math.random() * browsers.length)]()
 }
-
-export { generateUserAgent };

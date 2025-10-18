@@ -1,4 +1,4 @@
-function reason(messages){
+export function reasoningManager(messages){
     let payload = `
 
     You are a highly intelligent writer. Your job is to create a line of reasoning that would be used to create a follow-up answer to the user's prompt.
