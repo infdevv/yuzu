@@ -6,6 +6,7 @@
 */
 
 import { generateUserAgent } from './helpers/useragents.js';
+import { BareClient } from 'https://esm.sh/@tomphttp/bare-client@latest';
 
 class yuzu {
     constructor(endpoint, reasoning_endpoint, reasoning_on) {
@@ -16,74 +17,67 @@ class yuzu {
         this.reasoning_on = reasoning_on || true
         this.model = "google/gemma-2-9b-it"
         this.generateUserAgent = generateUserAgent;
-        this.proxies = [ // credits to G4F for these
-        'https://corsproxy.io/?',
-        'https://api.allorigins.win/raw?url=',
-        'https://cloudflare-cors-anywhere.queakchannel42.workers.dev/?',
-        'https://proxy.cors.sh/',
-        'https://cors-anywhere.herokuapp.com/',
-        'https://thingproxy.freeboard.io/fetch/',
-        'https://cors.bridged.cc/',
-        'https://cors-proxy.htmldriven.com/?url=',
-        'https://yacdn.org/proxy/',
-        'https://api.codetabs.com/v1/proxy?quest=',
-        // non g4f proxies
-        //'https://test.cors.workers.dev/',
-        //'https://cors-proxy.taskcluster.net/?url=',
-    ]
-    this.working = null
+        this.bareClient = null;
+        this.bareUrl = null;
+        this.initBareClient();
+    }
+
+    async initBareClient() {
+        try {
+            const configResponse = await fetch('./yuzu/config.json');
+            const config = await configResponse.json();
+            this.bareUrl = config.bare;
+            this.bareClient = new BareClient(this.bareUrl);
+            console.log("Bare client initialized with URL:", this.bareUrl);
+        } catch (e) {
+            console.error("Failed to initialize bare client:", e);
+        }
     }
 
     async proxy(endpoint, options){
-        // For POST requests, try direct connection first since many proxies don't handle POST bodies
-        const isPost = options && options.method === 'POST';
-
-        if (isPost) {
-            try {
-                console.log("Trying direct connection first for POST request...");
-                let res = await fetch(endpoint, options);
-                if (res.ok || (res.status !== 429 && res.status !== 401 && res.status !== 403 && res.status !== 500)) {
-                    console.log("Direct connection successful!");
-                    this.working = null; // Mark that direct works
-                    return res;
-                }
-            } catch (e) {
-                console.log("Direct connection failed, trying proxies:", e.message);
-            }
-        }
-
-        // Try previously working proxy first
+        //options['x-deepinfra-source'] = 'model-embed';
         try {
-            if (this.working === null && !isPost) throw new Error("...") // skip to catch
-            if (this.working !== null) {
-                const url = this.working + encodeURIComponent(endpoint);
-                let res = await fetch(url, options)
-                if (res.ok || (res.status !== 429 && res.status !== 401 && res.status !== 403 && res.status !== 500)) {
-                    return res;
+            console.log("Trying direct connection first for POST request...");
+            let res = await fetch(endpoint, options);
+            if (res.ok || (res.status !== 429 && res.status !== 401 && res.status !== 403 && res.status !== 500)) {
+                console.log("Direct connection successful!");
+                return res;
+            }
+        } catch (e) {
+            console.log("Direct connection failed, trying bare server:", e.message);
+        }
+
+        // Try bare server as fallback
+        if (this.bareClient) {
+            try {
+                console.log("Using bare server for request...");
+                const bareResponse = await this.bareClient.fetch(endpoint, options);
+                console.log("Bare server connection successful!");
+                return bareResponse;
+            } catch (e) {
+                console.log("Bare server failed:", e.message);
+            }
+        } else {
+            console.log("Bare client not initialized yet, waiting...");
+            // Wait for bare client to initialize
+            let retries = 0;
+            while (!this.bareClient && retries < 10) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                retries++;
+            }
+            if (this.bareClient) {
+                try {
+                    console.log("Using bare server for request (after wait)...");
+                    const bareResponse = await this.bareClient.fetch(endpoint, options);
+                    console.log("Bare server connection successful!");
+                    return bareResponse;
+                } catch (e) {
+                    console.log("Bare server failed:", e.message);
                 }
             }
         }
-        catch{
-            // Continue to try other proxies
-        }
 
-        // Try each proxy
-        for (const proxy of this.proxies) {
-            const url = proxy + encodeURIComponent(endpoint);
-            try {
-               let res = await fetch(url, options)
-               // skip 429 and 401. 429 = too many requests 401 = unauthorized
-               if (res.status == 429 || res.status == 401 || res.status == 403 || res.status == 500) continue
-               this.working = proxy
-               return res
-            }
-            catch (e) {
-                console.log("Proxy failed:", proxy, e.message)
-            }
-        }
-
-        console.log("No proxies working, trying native as last resort...")
-
+        console.log("Bare server not available, trying native as last resort...")
         return await fetch(endpoint, options) // try on our own
     }
 
