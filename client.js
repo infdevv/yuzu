@@ -31,13 +31,14 @@ class yuzu {
             console.log("Bare client initialized with URL:", this.bareUrl);
         } catch (e) {
             console.error("Failed to initialize bare client:", e);
-        }
+        } IK 
     }
 
     async proxy(endpoint, options){
         //options['x-deepinfra-source'] = 'model-embed';
         try {
             console.log("Trying direct connection first for POST request...");
+            //throw new Error("Direct connection failed");
             let res = await fetch(endpoint, options);
             if (res.ok || (res.status !== 429 && res.status !== 401 && res.status !== 403 && res.status !== 500)) {
                 console.log("Direct connection successful!");
