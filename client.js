@@ -14,11 +14,11 @@ class yuzu {
         this.endpoint = endpoint || "https://api.deepinfra.com/v1/openai/chat/completions"
         this.reasoning_endpoint = reasoning_endpoint || "https://charbot.ape3d.com/?prompt="
         this.reasoning_on = reasoning_on || true
-        this.model = "deepseek-ai/DeepSeek-V3.2-Exp"
+        this.model = "google/gemma-2-9b-it"
         this.generateUserAgent = generateUserAgent;
     }
 
-    async generate(messages, ...args) {
+    async generate(messages, model=this.model, ...args) {
 
         const extra = (args.length === 1 && typeof args[0] === 'object') ? args[0] : {}
 
@@ -29,7 +29,7 @@ class yuzu {
                 "User-Agent": this.generateUserAgent()
             },
             credentials: 'omit',
-            body: JSON.stringify({ messages: messages, model: this.model, ...extra })
+            body: JSON.stringify({ messages: messages, model: model, ...extra })
         })
 
         const data = await res.json()
@@ -37,7 +37,7 @@ class yuzu {
     }
 
 
-    async generateStreaming(messages, callback, ...args) {
+    async generateStreaming(messages, callback, model=this.model, ...args) {
 
         const extra = (args.length === 1 && typeof args[0] === 'object') ? args[0] : {}
 
@@ -48,7 +48,7 @@ class yuzu {
                 "User-Agent": this.generateUserAgent()
             },
             credentials: 'omit',
-            body: JSON.stringify({ messages: messages, model: this.model, stream: true, ...extra })
+            body: JSON.stringify({ messages: messages, model: model, stream: true, ...extra })
         })
 
         const reader = res.body.getReader();
