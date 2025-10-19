@@ -6,7 +6,6 @@
 */
 
 import { generateUserAgent } from './helpers/useragents.js';
-import { BareClient } from 'https://esm.sh/@tomphttp/bare-client@latest';
 
 class yuzu {
     constructor(endpoint, reasoning_endpoint, reasoning_on) {
@@ -17,131 +16,210 @@ class yuzu {
         this.reasoning_on = reasoning_on || true
         this.model = "google/gemma-2-9b-it"
         this.generateUserAgent = generateUserAgent;
-        this.bareClient = null;
-        this.bareUrl = null;
-        this.initBareClient();
-    }
+        this.lastTime = null;
 
-    async initBareClient() {
-        try {
-            const configResponse = await fetch('./yuzu/config.json');
-            const config = await configResponse.json();
-            this.bareUrl = config.bare;
-            this.bareClient = new BareClient(this.bareUrl);
-            console.log("Bare client initialized with URL:", this.bareUrl);
-        } catch (e) {
-            console.error("Failed to initialize bare client:", e);
-        } IK 
     }
 
     async proxy(endpoint, options){
-        //options['x-deepinfra-source'] = 'model-embed';
-        try {
-            console.log("Trying direct connection first for POST request...");
-            //throw new Error("Direct connection failed");
-            let res = await fetch(endpoint, options);
-            if (res.ok || (res.status !== 429 && res.status !== 401 && res.status !== 403 && res.status !== 500)) {
-                console.log("Direct connection successful!");
-                return res;
-            }
-        } catch (e) {
-            console.log("Direct connection failed, trying bare server:", e.message);
-        }
-
-        // Try bare server as fallback
-        if (this.bareClient) {
-            try {
-                console.log("Using bare server for request...");
-                const bareResponse = await this.bareClient.fetch(endpoint, options);
-                console.log("Bare server connection successful!");
-                return bareResponse;
-            } catch (e) {
-                console.log("Bare server failed:", e.message);
-            }
-        } else {
-            console.log("Bare client not initialized yet, waiting...");
-            // Wait for bare client to initialize
-            let retries = 0;
-            while (!this.bareClient && retries < 10) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-                retries++;
-            }
-            if (this.bareClient) {
-                try {
-                    console.log("Using bare server for request (after wait)...");
-                    const bareResponse = await this.bareClient.fetch(endpoint, options);
-                    console.log("Bare server connection successful!");
-                    return bareResponse;
-                } catch (e) {
-                    console.log("Bare server failed:", e.message);
-                }
-            }
-        }
-
-        console.log("Bare server not available, trying native as last resort...")
-        return await fetch(endpoint, options) // try on our own
+        return await fetch(endpoint, options);
     }
 
     async generate(messages, model=this.model, ...args) {
-
         const extra = (args.length === 1 && typeof args[0] === 'object') ? args[0] : {}
-        const res = await this.proxy(this.endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                "User-Agent": this.generateUserAgent()
-            },
-            credentials: 'omit',
-            body: JSON.stringify({ messages: messages, model: model, ...extra })
-        })
 
+        // Check if we should use fallback based on lastTime
+        const now = Date.now();
+        const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
 
-        const data = await res.json()
-        return data
+        if (this.lastTime && (now - this.lastTime) < fiveMinutes) {
+            console.log("Using Pollinations AI fallback (within 5-minute window)");
+            const fallbackRes = await fetch("https://text.pollinations.ai/text", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    "User-Agent": this.generateUserAgent()
+                },
+                credentials: 'omit',
+                body: JSON.stringify({ messages: messages, model: "mistral", ...extra })
+            });
+            const fallbackData = await fallbackRes.json();
+            return fallbackData;
+        }
+
+        try {
+            const res = await this.proxy(this.endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    "User-Agent": this.generateUserAgent()
+                },
+                credentials: 'omit',
+                body: JSON.stringify({ messages: messages, model: model, ...extra })
+            })
+
+            const data = await res.json()
+            return data
+        } catch (error) {
+            console.warn("Primary endpoint failed, falling back to Pollinations AI (mistral):", error.message);
+            this.lastTime = Date.now();
+
+            try {
+                const fallbackRes = await fetch("https://text.pollinations.ai/text", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        "User-Agent": this.generateUserAgent()
+                    },
+                    credentials: 'omit',
+                    body: JSON.stringify({ messages: messages, model: "mistral", ...extra })
+                });
+
+                const fallbackData = await fallbackRes.json();
+                return fallbackData;
+            } catch (fallbackError) {
+                console.error("Fallback endpoint also failed:", fallbackError.message);
+                throw fallbackError;
+            }
+        }
     }
 
 
     async generateStreaming(messages, callback, model=this.model, ...args) {
-
         const extra = (args.length === 1 && typeof args[0] === 'object') ? args[0] : {}
-        const res = await this.proxy(this.endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                "User-Agent": this.generateUserAgent()
-            },
-            credentials: 'omit',
-            body: JSON.stringify({ messages: messages, model: model, stream: true, ...extra })
-        })
 
+        // Check if we should use fallback based on lastTime
+        const now = Date.now();
+        const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
 
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+        if (this.lastTime && (now - this.lastTime) < fiveMinutes) {
+            console.log("Using Pollinations AI fallback (within 5-minute window)");
+            const fallbackRes = await fetch("https://text.pollinations.ai/text", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    "User-Agent": this.generateUserAgent()
+                },
+                credentials: 'omit',
+                body: JSON.stringify({ messages: messages, model: "mistral", stream: true, ...extra })
+            });
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+            const reader = fallbackRes.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
 
-            // Decode the chunk and add to buffer
-            buffer += decoder.decode(value, { stream: true });
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
 
-            // Split by newlines to process complete SSE messages
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
 
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6).trim();
-                    if (data === '[DONE]') continue;
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6).trim();
+                        if (data === '[DONE]') continue;
 
-                    try {
-                        const parsed = JSON.parse(data);
-                        callback(parsed);
-                    } catch (e) {
-                        // Skip invalid JSON
+                        try {
+                            const parsed = JSON.parse(data);
+                            callback(parsed);
+                        } catch (e) {
+                            // Skip invalid JSON
+                        }
                     }
                 }
+            }
+            return;
+        }
+
+        try {
+            const res = await this.proxy(this.endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    "User-Agent": this.generateUserAgent()
+                },
+                credentials: 'omit',
+                body: JSON.stringify({ messages: messages, model: model, stream: true, ...extra })
+            })
+
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                // Decode the chunk and add to buffer
+                buffer += decoder.decode(value, { stream: true });
+
+                // Split by newlines to process complete SSE messages
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6).trim();
+                        if (data === '[DONE]') continue;
+
+                        try {
+                            const parsed = JSON.parse(data);
+                            callback(parsed);
+                        } catch (e) {
+                            // Skip invalid JSON
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn("Primary endpoint failed, falling back to Pollinations AI (mistral):", error.message);
+            this.lastTime = Date.now();
+
+            try {
+                const fallbackRes = await fetch("https://text.pollinations.ai/text", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        "User-Agent": this.generateUserAgent()
+                    },
+                    credentials: 'omit',
+                    body: JSON.stringify({ messages: messages, model: "mistral", stream: true, ...extra })
+                });
+
+                const reader = fallbackRes.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    // Decode the chunk and add to buffer
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // Split by newlines to process complete SSE messages
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6).trim();
+                            if (data === '[DONE]') continue;
+
+                            try {
+                                const parsed = JSON.parse(data);
+                                callback(parsed);
+                            } catch (e) {
+                                // Skip invalid JSON
+                            }
+                        }
+                    }
+                }
+            } catch (fallbackError) {
+                console.error("Fallback endpoint also failed:", fallbackError.message);
+                throw fallbackError;
             }
         }
 
