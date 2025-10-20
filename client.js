@@ -24,8 +24,27 @@ class yuzu {
         return await fetch(endpoint, options);
     }
 
-    async generate(messages, model=this.model, ...args) {
-        const extra = (args.length === 1 && typeof args[0] === 'object') ? args[0] : {}
+    async generate(messages, model=this.model, settings = {}) {
+        // Extract settings parameters with defaults
+        const {
+            temperature = 0.7,
+            top_p = 1,
+            max_tokens = 26000,
+            frequency_penalty = 0,
+            presence_penalty = 0,
+            ...extra
+        } = settings;
+
+        const requestBody = {
+            messages: messages,
+            model: model,
+            temperature: temperature,
+            top_p: top_p,
+            max_tokens: max_tokens,
+            frequency_penalty: frequency_penalty,
+            presence_penalty: presence_penalty,
+            ...extra
+        };
 
         // Check if we should use fallback based on lastTime
         const now = Date.now();
@@ -40,7 +59,7 @@ class yuzu {
                     "User-Agent": this.generateUserAgent()
                 },
                 credentials: 'omit',
-                body: JSON.stringify({ messages: messages, model: "mistral", ...extra })
+                body: JSON.stringify({ ...requestBody, model: "mistral" })
             });
             const fallbackData = await fallbackRes.json();
             return fallbackData;
@@ -54,7 +73,7 @@ class yuzu {
                     "User-Agent": this.generateUserAgent()
                 },
                 credentials: 'omit',
-                body: JSON.stringify({ messages: messages, model: model, ...extra })
+                body: JSON.stringify(requestBody)
             })
 
             const data = await res.json()
@@ -71,7 +90,7 @@ class yuzu {
                         "User-Agent": this.generateUserAgent()
                     },
                     credentials: 'omit',
-                    body: JSON.stringify({ messages: messages, model: "mistral", ...extra })
+                    body: JSON.stringify({ ...requestBody, model: "mistral" })
                 });
 
                 const fallbackData = await fallbackRes.json();
@@ -84,8 +103,36 @@ class yuzu {
     }
 
 
-    async generateStreaming(messages, callback, model=this.model, ...args) {
-        const extra = (args.length === 1 && typeof args[0] === 'object') ? args[0] : {}
+    async generateStreaming(messages, callback, model=this.model, settings = {}) {
+        // Extract settings parameters with defaults
+        const {
+            temperature = 0.7,
+            top_p = 1,
+            max_tokens = 26000,
+            frequency_penalty = 0,
+            presence_penalty = 0,
+            ...extra
+        } = settings;
+
+        const requestBody = {
+            messages: messages,
+            model: model,
+            stream: true,
+            temperature: temperature,
+            top_p: top_p,
+            max_tokens: max_tokens,
+            frequency_penalty: frequency_penalty,
+            presence_penalty: presence_penalty,
+            ...extra
+        };
+
+        console.log("Yuzu generateStreaming called with settings:", {
+            temperature,
+            top_p,
+            max_tokens,
+            frequency_penalty,
+            presence_penalty
+        });
 
         // Check if we should use fallback based on lastTime
         const now = Date.now();
@@ -100,7 +147,7 @@ class yuzu {
                     "User-Agent": this.generateUserAgent()
                 },
                 credentials: 'omit',
-                body: JSON.stringify({ messages: messages, model: "mistral", stream: true, ...extra })
+                body: JSON.stringify({ ...requestBody, model: "mistral" })
             });
 
             const reader = fallbackRes.body.getReader();
@@ -140,7 +187,7 @@ class yuzu {
                     "User-Agent": this.generateUserAgent()
                 },
                 credentials: 'omit',
-                body: JSON.stringify({ messages: messages, model: model, stream: true, ...extra })
+                body: JSON.stringify(requestBody)
             })
 
 
@@ -185,7 +232,7 @@ class yuzu {
                         "User-Agent": this.generateUserAgent()
                     },
                     credentials: 'omit',
-                    body: JSON.stringify({ messages: messages, model: "mistral", stream: true, ...extra })
+                    body: JSON.stringify({ ...requestBody, model: "mistral" })
                 });
 
                 const reader = fallbackRes.body.getReader();
