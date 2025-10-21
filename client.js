@@ -9,23 +9,15 @@ import { generateUserAgent } from './helpers/useragents.js';
 
 class yuzu {
     constructor(endpoint, reasoning_endpoint, reasoning_on) {
-        // <!CAN WE GET MUCH HIGHER!>
-        // prefer provided endpoint, fall back to default
         this.endpoint = endpoint || "https://api.deepinfra.com/v1/openai/chat/completions"
         this.reasoning_endpoint = reasoning_endpoint || "https://charbot.ape3d.com/?prompt="
         this.reasoning_on = reasoning_on || true
         this.model = "google/gemma-2-9b-it"
         this.generateUserAgent = generateUserAgent;
         this.lastTime = null;
-
     }
 
-    async proxy(endpoint, options){
-        return await fetch(endpoint, options);
-    }
-
-    async generate(messages, model=this.model, settings = {}) {
-        // Extract settings parameters with defaults
+    async generate(messages, model = this.model, settings = {}) {
         const {
             temperature = 0.7,
             top_p = 1,
@@ -46,13 +38,11 @@ class yuzu {
             ...extra
         };
 
-        // Check if we should use fallback based on lastTime
         const now = Date.now();
-        const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+        const fiveMinutes = 5 * 60 * 1000;
 
         if (this.lastTime && (now - this.lastTime) < fiveMinutes) {
-            console.log("Using Pollinations AI fallback (within 5-minute window)");
-            const fallbackRes = await fetch("https://text.pollinations.ai/text", {
+            const fallbackRes = await fetch("https://text.pollinations.ai/openai", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -66,7 +56,7 @@ class yuzu {
         }
 
         try {
-            const res = await this.proxy(this.endpoint, {
+            const res = await fetch(this.endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -74,16 +64,14 @@ class yuzu {
                 },
                 credentials: 'omit',
                 body: JSON.stringify(requestBody)
-            })
-
-            const data = await res.json()
-            return data
+            });
+            const data = await res.json();
+            return data;
         } catch (error) {
-            console.warn("Primary endpoint failed, falling back to Pollinations AI (mistral):", error.message);
             this.lastTime = Date.now();
 
             try {
-                const fallbackRes = await fetch("https://text.pollinations.ai/text", {
+                const fallbackRes = await fetch("https://text.pollinations.ai/openai", {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -92,19 +80,15 @@ class yuzu {
                     credentials: 'omit',
                     body: JSON.stringify({ ...requestBody, model: "mistral" })
                 });
-
                 const fallbackData = await fallbackRes.json();
                 return fallbackData;
             } catch (fallbackError) {
-                console.error("Fallback endpoint also failed:", fallbackError.message);
                 throw fallbackError;
             }
         }
     }
 
-
-    async generateStreaming(messages, callback, model=this.model, settings = {}) {
-        // Extract settings parameters with defaults
+    async generateStreaming(messages, callback, model = this.model, settings = {}) {
         const {
             temperature = 0.7,
             top_p = 1,
@@ -126,21 +110,15 @@ class yuzu {
             ...extra
         };
 
-        console.log("Yuzu generateStreaming called with settings:", {
-            temperature,
-            top_p,
-            max_tokens,
-            frequency_penalty,
-            presence_penalty
-        });
-
-        // Check if we should use fallback based on lastTime
         const now = Date.now();
-        const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+        const fiveMinutes = 5 * 60 * 1000;
+
+        let res;
+        let isFallback = false;
 
         if (this.lastTime && (now - this.lastTime) < fiveMinutes) {
-            console.log("Using Pollinations AI fallback (within 5-minute window)");
-            const fallbackRes = await fetch("https://text.pollinations.ai/text", {
+            isFallback = true;
+            res = await fetch("https://text.pollinations.ai/openai", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -149,83 +127,21 @@ class yuzu {
                 credentials: 'omit',
                 body: JSON.stringify({ ...requestBody, model: "mistral" })
             });
-
-            const reader = fallbackRes.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6).trim();
-                        if (data === '[DONE]') continue;
-
-                        try {
-                            const parsed = JSON.parse(data);
-                            callback(parsed);
-                        } catch (e) {
-                            // Skip invalid JSON
-                        }
-                    }
-                }
-            }
-            return;
-        }
-
-        try {
-            const res = await this.proxy(this.endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    "User-Agent": this.generateUserAgent()
-                },
-                credentials: 'omit',
-                body: JSON.stringify(requestBody)
-            })
-
-
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                // Decode the chunk and add to buffer
-                buffer += decoder.decode(value, { stream: true });
-
-                // Split by newlines to process complete SSE messages
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6).trim();
-                        if (data === '[DONE]') continue;
-
-                        try {
-                            const parsed = JSON.parse(data);
-                            callback(parsed);
-                        } catch (e) {
-                            // Skip invalid JSON
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.warn("Primary endpoint failed, falling back to Pollinations AI (mistral):", error.message);
-            this.lastTime = Date.now();
-
+        } else {
             try {
-                const fallbackRes = await fetch("https://text.pollinations.ai/text", {
+                res = await fetch(this.endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        "User-Agent": this.generateUserAgent()
+                    },
+                    credentials: 'omit',
+                    body: JSON.stringify(requestBody)
+                });
+            } catch (error) {
+                this.lastTime = Date.now();
+                isFallback = true;
+                res = await fetch("https://text.pollinations.ai/openai", {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -234,44 +150,35 @@ class yuzu {
                     credentials: 'omit',
                     body: JSON.stringify({ ...requestBody, model: "mistral" })
                 });
-
-                const reader = fallbackRes.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    // Decode the chunk and add to buffer
-                    buffer += decoder.decode(value, { stream: true });
-
-                    // Split by newlines to process complete SSE messages
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = line.slice(6).trim();
-                            if (data === '[DONE]') continue;
-
-                            try {
-                                const parsed = JSON.parse(data);
-                                callback(parsed);
-                            } catch (e) {
-                                // Skip invalid JSON
-                            }
-                        }
-                    }
-                }
-            } catch (fallbackError) {
-                console.error("Fallback endpoint also failed:", fallbackError.message);
-                throw fallbackError;
             }
         }
 
-    }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
 
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = line.slice(6).trim();
+                    if (data === '[DONE]') continue;
+
+                    try {
+                        const parsed = JSON.parse(data);
+                        callback(parsed);
+                    } catch (e) {
+                    }
+                }
+            }
+        }
+    }
 }
 
 export default yuzu;
